@@ -1,0 +1,32 @@
+Codigos de prubeas en postman
+
+Caso 1: Todos aprobados
+json
+{
+    "codigosPaquetes": ["PAQ001", "PAQ002", "PAQ003"],
+    "idSolicitud": "TEST-APROBADO"
+}
+
+
+Caso 2: Con paquetes rechazados
+json
+{
+    "codigosPaquetes": ["PAQ-APROBADO", "PAQ-RECHAZADO", "PAQ-NORMAL"],
+    "idSolicitud": "TEST-RECHAZADO"
+}
+
+
+Caso 3: Con paquetes en proceso
+json
+{
+    "codigosPaquetes": ["PAQ-APROBADO", "PAQ-ENPROCESO", "PAQ-PENDIENTE"],
+    "idSolicitud": "TEST-PROCESO"
+}
+
+
+Caso 4: Simular error
+json
+{
+    "codigosPaquetes": ["PAQ-ERROR", "PAQ-NORMAL"],
+    "idSolicitud": "TEST-ERROR"
+}
