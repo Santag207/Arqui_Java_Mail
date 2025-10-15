@@ -23,8 +23,18 @@ public class ValidacionPaqueteController {
     public ResponseEntity<ValidacionPaqueteResponse> validarPaquetes(
             @RequestBody ValidacionPaqueteRequest request) {
         
-        log.info("Recibida solicitud de validación para {} paquetes", 
-                 request.getCodigosPaquetes().size());
+        // Validar que la solicitud no sea nula y que tenga códigos de paquetes
+        if (request == null || request.getCodigosPaquetes() == null || request.getCodigosPaquetes().isEmpty()) {
+            log.error("Solicitud inválida: request nula o sin códigos de paquetes");
+            ValidacionPaqueteResponse errorResponse = new ValidacionPaqueteResponse();
+            errorResponse.setTodosAprobados(false);
+            errorResponse.setPuedeContinuar(false);
+            errorResponse.setMensaje("La solicitud debe contener una lista de códigos de paquetes");
+            return ResponseEntity.badRequest().body(errorResponse);
+        }
+
+        log.info("Recibida solicitud de validación para {} paquetes. ID Solicitud: {}", 
+                 request.getCodigosPaquetes().size(), request.getIdSolicitud());
         
         try {
             ValidacionPaqueteResponse response = otnService.validarMultiplesPaquetes(request);
@@ -40,17 +50,26 @@ public class ValidacionPaqueteController {
             
         } catch (Exception e) {
             log.error("Error en el proceso de validación: {}", e.getMessage());
-            return ResponseEntity.internalServerError().build();
+            ValidacionPaqueteResponse errorResponse = new ValidacionPaqueteResponse();
+            errorResponse.setTodosAprobados(false);
+            errorResponse.setPuedeContinuar(false);
+            errorResponse.setMensaje("Error interno del servidor: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
 
     @GetMapping("/health")
     public ResponseEntity<String> healthCheck() {
-        boolean available = otnService.isServiceAvailable();
-        if (available) {
-            return ResponseEntity.ok("Servicio OTN disponible");
-        } else {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("Servicio OTN no disponible");
+        try {
+            boolean available = otnService.isServiceAvailable();
+            if (available) {
+                return ResponseEntity.ok("Servicio OTN disponible");
+            } else {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body("Servicio OTN no disponible");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body("Error verificando servicio OTN: " + e.getMessage());
         }
     }
 }

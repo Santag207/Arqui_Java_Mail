@@ -11,12 +11,11 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.http.ResponseEntity;
-import java.time.LocalDateTime;
 
 @Slf4j
 @Service
 @Profile("prod")
-public class OTNServiceImpl implements IOTNService {
+public class DTNServiceImpl implements IOTNService {
 
     @Value("${otn.service.url}")
     private String otnServiceUrl;
@@ -26,7 +25,7 @@ public class OTNServiceImpl implements IOTNService {
 
     private final RestTemplate restTemplate;
 
-    public OTNServiceImpl(RestTemplate restTemplate) {
+    public DTNServiceImpl(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
 
@@ -42,9 +41,7 @@ public class OTNServiceImpl implements IOTNService {
             );
             
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                OTNResponse otnResponse = response.getBody();
-                otnResponse.setTimestamp(LocalDateTime.now()); // Agregar timestamp
-                return otnResponse;
+                return response.getBody();
             } else {
                 throw new OTNServiceException("Error en respuesta del servicio OTN: " + response.getStatusCode());
             }

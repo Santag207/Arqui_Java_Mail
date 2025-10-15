@@ -1,138 +1,128 @@
 package com.envio_correo.email.services.impl;
 
+import com.envio_correo.email.exceptions.OTNServiceException;
 import com.envio_correo.email.services.IOTNService;
 import com.envio_correo.email.services.models.OTNResponse;
 import com.envio_correo.email.services.models.ValidacionPaqueteRequest;
 import com.envio_correo.email.services.models.ValidacionPaqueteResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 
 @Slf4j
-@Primary
 @Service
-@ConditionalOnProperty(name = "otn.mock.enabled", havingValue = "true", matchIfMissing = true)
+@Profile("!prod")
 public class MockOTNService implements IOTNService {
 
+    @Value("${otn.mock.enabled:true}")
+    private boolean mockEnabled;
+
     private final Random random = new Random();
-    
+
+    // Estados posibles para simulación
+    private final List<String> estados = Arrays.asList("APROBADO", "RECHAZADO", "EN_PROCESO");
+
     @Override
-    public OTNResponse validarPaquete(String codigoPaquete) {
-        log.info("Mock OTN: Validando paquete {}", codigoPaquete);
-        
-        // Simular un pequeño retardo de red
-        try {
-            Thread.sleep(100 + random.nextInt(200));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    public OTNResponse validarPaquete(String codigoPaquete) throws OTNServiceException {
+        log.info("Validando paquete único con código: {}", codigoPaquete);
+
+        // Simular un error aleatorio (5% de las veces)
+        if (random.nextInt(100) < 5) {
+            throw new OTNServiceException("Error simulado en la validación del paquete");
         }
-        
+
         OTNResponse response = new OTNResponse();
         response.setCodigoPaquete(codigoPaquete);
-        
-        // Lógica de mock basada en el código del paquete
-        if (codigoPaquete.toUpperCase().contains("RECHAZADO")) {
-            response.setEstado("RECHAZADO");
-            response.setMensaje("Paquete rechazado - No cumple con las políticas turísticas nacionales");
-        } else if (codigoPaquete.toUpperCase().contains("ENPROCESO") || 
-                   codigoPaquete.toUpperCase().contains("PENDIENTE")) {
-            response.setEstado("ENPROCESO");
-            response.setMensaje("Paquete en proceso de validación - Espere confirmación");
-        } else if (codigoPaquete.toUpperCase().contains("ERROR")) {
-            throw new RuntimeException("Error simulado en la validación");
+
+        // Asignar estado aleatorio
+        String estado = estados.get(random.nextInt(estados.size()));
+        response.setEstado(estado);
+        response.setAprobado("APROBADO".equals(estado));
+        response.setTimestamp(LocalDateTime.now()); // CORREGIDO: Usar LocalDateTime
+
+        // Mensaje según el estado
+        if ("APROBADO".equals(estado)) {
+            response.setMensaje("Paquete aprobado exitosamente");
+        } else if ("RECHAZADO".equals(estado)) {
+            response.setMensaje("Paquete rechazado por políticas de seguridad");
         } else {
-            // Para códigos normales, decidir aleatoriamente
-            int decision = random.nextInt(100);
-            if (decision < 70) { // 70% de probabilidad de aprobar
-                response.setEstado("APROBADO");
-                response.setMensaje("Paquete aprobado para la venta");
-            } else if (decision < 85) { // 15% de probabilidad de rechazar
-                response.setEstado("RECHAZADO");
-                response.setMensaje("Paquete rechazado - Requiere documentación adicional");
-            } else { // 15% de probabilidad de en proceso
-                response.setEstado("ENPROCESO");
-                response.setMensaje("Paquete en revisión por el comité de turismo");
-            }
+            response.setMensaje("Paquete en proceso de validación");
         }
-        
-        response.setTimestamp(java.time.LocalDateTime.now().toString());
-        log.info("Mock OTN: Paquete {} -> {}", codigoPaquete, response.getEstado());
+
+        // Simular retardo de red
+        try {
+            Thread.sleep(100 + random.nextInt(400));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OTNServiceException("Validación interrumpida", e);
+        }
+
         return response;
     }
 
     @Override
     public ValidacionPaqueteResponse validarMultiplesPaquetes(ValidacionPaqueteRequest request) {
-        log.info("Mock OTN: Validando {} paquetes - ID: {}", 
+        log.info("Validando {} paquetes. ID Solicitud: {}", 
                  request.getCodigosPaquetes().size(), request.getIdSolicitud());
-        
-        Map<String, String> resultados = new HashMap<>();
-        List<String> rechazados = new ArrayList<>();
-        List<String> enProceso = new ArrayList<>();
-        boolean todosAprobados = true;
-        boolean puedeContinuar = true;
+
+        ValidacionPaqueteResponse response = new ValidacionPaqueteResponse();
+
+        int aprobados = 0;
+        int rechazados = 0;
+        int enProceso = 0;
 
         for (String codigo : request.getCodigosPaquetes()) {
             try {
-                OTNResponse respuesta = validarPaquete(codigo);
-                resultados.put(codigo, respuesta.getEstado());
-                
-                switch (respuesta.getEstado()) {
-                    case "RECHAZADO":
-                        rechazados.add(codigo);
-                        todosAprobados = false;
-                        puedeContinuar = false;
-                        break;
-                    case "ENPROCESO":
-                        enProceso.add(codigo);
-                        todosAprobados = false;
-                        puedeContinuar = false;
-                        break;
-                    case "APROBADO":
-                        // Continúa sin problemas
-                        break;
-                    default:
-                        log.warn("Estado desconocido para paquete {}: {}", codigo, respuesta.getEstado());
-                        puedeContinuar = false;
+                OTNResponse otnResponse = validarPaquete(codigo);
+                response.getResultadosValidacion().put(codigo, otnResponse.getEstado());
+
+                if (otnResponse.isAprobado()) {
+                    aprobados++;
+                } else if ("RECHAZADO".equals(otnResponse.getEstado())) {
+                    rechazados++;
+                    response.getPaquetesRechazados().add(codigo);
+                } else {
+                    enProceso++;
+                    response.getPaquetesEnProceso().add(codigo);
                 }
-                
-            } catch (Exception e) {
+
+            } catch (OTNServiceException e) {
                 log.error("Error validando paquete {}: {}", codigo, e.getMessage());
-                resultados.put(codigo, "ERROR");
-                puedeContinuar = false;
-                todosAprobados = false;
+                response.getResultadosValidacion().put(codigo, "ERROR");
+                rechazados++;
+                response.getPaquetesRechazados().add(codigo);
             }
         }
 
-        ValidacionPaqueteResponse response = new ValidacionPaqueteResponse();
-        response.setTodosAprobados(todosAprobados);
-        response.setPuedeContinuar(puedeContinuar);
-        response.setResultadosValidacion(resultados);
-        response.setPaquetesRechazados(rechazados);
-        response.setPaquetesEnProceso(enProceso);
-        
-        if (puedeContinuar) {
-            response.setMensaje("✅ Todos los paquetes han sido APROBADOS. Puede continuar con la compra.");
-        } else if (!rechazados.isEmpty()) {
-            response.setMensaje("❌ No se puede continuar: " + rechazados.size() + " paquete(s) RECHAZADO(S)");
-        } else if (!enProceso.isEmpty()) {
-            response.setMensaje("⏳ No se puede continuar: " + enProceso.size() + " paquete(s) EN PROCESO de validación");
+        // Determinar si todos están aprobados
+        response.setTodosAprobados(rechazados == 0 && enProceso == 0);
+        // Puede continuar si no hay rechazados (los en proceso están permitidos)
+        response.setPuedeContinuar(rechazados == 0);
+
+        // Construir mensaje
+        if (response.isTodosAprobados()) {
+            response.setMensaje("Todos los paquetes fueron aprobados. Puede continuar con la compra.");
+        } else if (response.isPuedeContinuar()) {
+            response.setMensaje(String.format(
+                "Validación parcialmente exitosa. %d aprobados, %d en proceso. Puede continuar con la compra.",
+                aprobados, enProceso));
         } else {
-            response.setMensaje("⚠️ Error en la validación de paquetes");
+            response.setMensaje(String.format(
+                "Validación fallida. %d aprobados, %d rechazados, %d en proceso. No puede continuar con la compra.",
+                aprobados, rechazados, enProceso));
         }
 
-        log.info("Mock OTN: Resultado validación - {}", response.getMensaje());
         return response;
     }
 
     @Override
     public boolean isServiceAvailable() {
-        return true; // Mock siempre disponible
+        return mockEnabled;
     }
 }
