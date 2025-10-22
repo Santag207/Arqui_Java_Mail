@@ -1,0 +1,3 @@
+com/example/subscriber/model/MessageDto.class
+com/example/subscriber/service/MessageReceiver.class
+com/example/subscriber/SubscriberApplication.class
