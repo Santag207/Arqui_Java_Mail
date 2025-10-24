@@ -6,13 +6,13 @@ import com.envio_correo.email.services.IEmailService;
 import com.envio_correo.email.services.models.EmailDTO;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-import lombok.extern.slf4j.Slf4j;
 
 import java.time.LocalDateTime;
 
@@ -34,21 +34,24 @@ public class EmailServiceImpl implements IEmailService {
 
     @Override
     public void sendMail(EmailDTO email) throws MessagingException {
-        log.info("🔄 Iniciando envío de correo a: {}", email.getDestinatario());
+        log.info("🔄 INICIANDO ENVÍO DE CORREO a: {}", email.getDestinatario());
         
         // 1. Validar datos de entrada
         if (email.getDestinatario() == null || email.getDestinatario().trim().isEmpty()) {
+            log.error("❌ DESTINATARIO VACÍO - No se puede enviar correo");
             throw new MessagingException("El destinatario no puede estar vacío");
         }
         
         // 2. Guardar log INICIAL (transacción separada)
         Long logId = guardarLogInicial(email);
         if (logId == null) {
+            log.error("❌ ERROR CRÍTICO - No se pudo guardar log inicial");
             throw new MessagingException("Error al guardar log inicial");
         }
         
         try {
             // 3. Enviar correo (sin transacción para evitar rollback)
+            log.info("📤 ENVIANDO CORREO REAL a: {}", email.getDestinatario());
             enviarCorreoReal(email);
             
             // 4. Actualizar a ÉXITO (transacción separada)
@@ -128,8 +131,6 @@ public class EmailServiceImpl implements IEmailService {
      * ENVÍO REAL DE CORREO - VERSIÓN PRODUCCIÓN
      */
     private void enviarCorreoReal(EmailDTO email) throws MessagingException {
-        log.info("📤 ENVIANDO CORREO REAL a: {}", email.getDestinatario());
-        
         MimeMessage message = javaMailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
@@ -140,6 +141,7 @@ public class EmailServiceImpl implements IEmailService {
         // Procesar plantilla Thymeleaf
         Context context = new Context();
         context.setVariable("message", email.getMensaje() != null ? email.getMensaje() : "");
+        context.setVariable("fecha", LocalDateTime.now().toString());
         String contentHTML = templateEngine.process("email.html", context);
 
         helper.setText(contentHTML, true);
@@ -150,29 +152,5 @@ public class EmailServiceImpl implements IEmailService {
         javaMailSender.send(message);
         
         log.info("📨 Correo enviado exitosamente a: {}", email.getDestinatario());
-    }
-
-    /**
-     * MÉTODO ALTERNATIVO: Para desarrollo/testing (opcional)
-     */
-    private void enviarCorreoSimulado(EmailDTO email) throws MessagingException {
-        log.info("📤 [MODO DESARROLLO] Simulando envío a: {}", email.getDestinatario());
-        log.info("📧 Asunto: {}", email.getAsunto());
-        
-        // Procesar plantilla igual que en producción
-        Context context = new Context();
-        context.setVariable("message", email.getMensaje() != null ? email.getMensaje() : "");
-        String contentHTML = templateEngine.process("email.html", context);
-        log.info("🎨 HTML generado: {} caracteres", contentHTML.length());
-        
-        // Simular retardo de red
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new MessagingException("Envío simulado interrumpido", e);
-        }
-        
-        log.info("✅ SIMULACIÓN COMPLETADA - Correo 'enviado' a: {}", email.getDestinatario());
     }
 }

@@ -1,10 +1,37 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
-    <title>Correo Prueba con HTML</title>
+    <meta charset="UTF-8">
+    <title>Notificación del Sistema</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #4CAF50; color: white; padding: 10px 20px; text-align: center; }
+        .content { background: #f9f9f9; padding: 20px; margin: 20px 0; }
+        .footer { text-align: center; padding: 10px; font-size: 12px; color: #666; }
+        .message { background: white; padding: 15px; border-left: 4px solid #4CAF50; }
+    </style>
 </head>
 <body>
-    <h1 style="#00bff">¡Hola Arqui!</h1>
-    <p style ="color:f00;" th:text="${message}"></p>
+    <div class="container">
+        <div class="header">
+            <h1>📧 Sistema de Notificaciones</h1>
+        </div>
+        
+        <div class="content">
+            <div class="message">
+                <p th:text="${message}">Mensaje de notificación</p>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 10px; background: #e7f3ff; border-radius: 5px;">
+                <p><strong>🕐 Fecha de envío:</strong> <span th:text="${fecha}"></span></p>
+                <p><strong>🔐 Este es un mensaje automático, por favor no responder.</strong></p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>&copy; 2025 Sistema de Notificaciones. Todos los derechos reservados.</p>
+        </div>
+    </div>
 </body>
 </html>

@@ -1,41 +1,32 @@
 package com.example.publisher.controller;
 
-import com.example.publisher.model.MessageDto;
+import com.example.publisher.model.EmailMessageDTO;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/messages")
 public class MessageController {
-    
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
-    
-    @Value("${rabbitmq.queue.name}")
-    private String queueName;
-    
-    @Autowired
-    private ObjectMapper objectMapper;
-    
-    @PostMapping("/send")
-    public String sendMessage(@RequestBody MessageDto message) {
-        try {
-            System.out.println("📤 PUBLICADOR - Enviando mensaje: " + message);
-            
-            // Convertir a JSON String
-            String jsonMessage = objectMapper.writeValueAsString(message);
-            rabbitTemplate.convertAndSend(queueName, jsonMessage);
-            
-            return "Mensaje enviado correctamente: " + message.getContent();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return "Error al enviar mensaje: " + e.getMessage();
-        }
+
+    private final RabbitTemplate rabbitTemplate;
+
+    @Value("${rabbitmq.exchange.name:emailExchange}")
+    private String exchange;
+
+    @Value("${rabbitmq.routing.email.key:emailRoutingKey}")
+    private String routingKey;
+
+    public MessageController(RabbitTemplate rabbitTemplate) {
+        this.rabbitTemplate = rabbitTemplate;
     }
+
+    @PostMapping("/send-direct")
+    public ResponseEntity<String> sendDirect(@RequestBody EmailMessageDTO emailMessage) {
+        rabbitTemplate.convertAndSend(exchange, routingKey, emailMessage);
+        return ResponseEntity.ok("Enviado directo al queue");
+    }
+
+    // ...existing endpoints...
 }
