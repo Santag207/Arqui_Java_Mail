@@ -23,69 +23,23 @@ public class RabbitMQConsumer {
     }
 
     @RabbitListener(queues = "${rabbitmq.queue.email.name}")
-    public void consumeEmailMessage(String jsonPayload) {
-        EmailMessageDTO emailMessage = null; // declaración fuera del try
+    public void consumeEmailMessage(EmailMessageDTO emailMessage) {
         try {
-            if (jsonPayload == null || jsonPayload.trim().isEmpty()) {
-                log.warn("📥 Mensaje vacío recibido - se descarta");
-                return; // ack y salir
+            if (emailMessage == null) {
+                log.warn("📥 Mensaje nulo recibido - se descarta");
+                return;
             }
 
-            // Intentar leer como árbol para detectar formato
-            JsonNode root;
-            try {
-                root = objectMapper.readTree(jsonPayload);
-            } catch (Exception ex) {
-                log.warn("📥 Payload no es JSON válido: {}. Se descarta", jsonPayload);
-                return; // no re-lanzar
-            }
-
-            if (root.has("destinatario") || root.has("asunto") || root.has("mensaje")) {
-                // JSON directo con los campos de EmailMessageDTO
-                emailMessage = objectMapper.treeToValue(root, EmailMessageDTO.class);
-            } else if (root.has("content")) {
-                // Publicador envía { "content": "...json string..." , "sender": "..." }
-                JsonNode contentNode = root.get("content");
-                if (contentNode == null || contentNode.isNull()) {
-                    log.warn("📥 Campo 'content' nulo en el mensaje. Se descarta. Payload: {}", jsonPayload);
-                    return; // ack y salir
-                }
-                String contentStr = contentNode.isTextual()
-                        ? contentNode.asText()
-                        : objectMapper.writeValueAsString(contentNode);
-
-                if (contentStr == null || contentStr.trim().isEmpty() || "null".equals(contentStr.trim())) {
-                    log.warn("📥 'content' vacío o 'null'. Verificar publicador. Payload: {}", jsonPayload);
-                    return; // ack y salir
-                }
-
-                try {
-                    emailMessage = objectMapper.readValue(contentStr, EmailMessageDTO.class);
-                } catch (Exception ex) {
-                    log.warn("📥 'content' no contiene EmailMessageDTO válido: {}. Se descarta", contentStr);
-                    return;
-                }
-            } else {
-                // Fallback: intentar parseo directo a DTO
-                try {
-                    emailMessage = objectMapper.readValue(jsonPayload, EmailMessageDTO.class);
-                } catch (Exception ex) {
-                    log.warn("📥 No se reconoce formato del mensaje. Se descarta: {}", jsonPayload);
-                    return;
-                }
-            }
-
-            log.info("📩 MENSAJE RECIBIDO DE RABBITMQ - Cola: {}", System.getProperty("rabbitmq.queue.email.name","messageQueue"));
+            log.info("📩 MENSAJE RECIBIDO DE RABBITMQ");
             log.info("👤 Destinatario: {}", emailMessage.getDestinatario());
             log.info("📧 Asunto: {}", emailMessage.getAsunto());
 
-            // Validación mínima
-            if (emailMessage == null || emailMessage.getDestinatario() == null || emailMessage.getDestinatario().trim().isEmpty()) {
-                log.warn("📛 Destinatario inválido. Se descarta el mensaje (no re-lanzado).");
-                return; // no re-lanzar excepción
+            if (emailMessage.getDestinatario() == null || emailMessage.getDestinatario().trim().isEmpty()) {
+                log.warn("📛 Destinatario inválido. Se descarta el mensaje.");
+                return;
             }
 
-            // Convertir EmailMessageDTO a EmailDTO
+            // Convertir EmailMessageDTO a EmailDTO y enviar
             EmailDTO emailDTO = new EmailDTO();
             emailDTO.setDestinatario(emailMessage.getDestinatario());
             emailDTO.setAsunto(emailMessage.getAsunto());
@@ -94,17 +48,12 @@ public class RabbitMQConsumer {
             log.info("🚀 INICIANDO ENVÍO DE CORREO DESDE RABBITMQ...");
             try {
                 emailService.sendMail(emailDTO);
-                log.info("✅ CORREO ENVIADO EXITOSAMENTE DESDE RABBITMQ - {}", emailMessage.getDestinatario());
+                log.info("✅ CORREO ENVIADO EXITOSAMENTE - {}", emailMessage.getDestinatario());
             } catch (Exception sendEx) {
-                // Manejar fallo de envío sin cerrar listener
-                log.error("❌ Error enviando email al procesar mensaje de cola: {}", sendEx.getMessage(), sendEx);
-                // opcional: guardar en tabla de errores / enviar a DLQ manual
+                log.error("❌ Error enviando email desde consumidor RabbitMQ: {}", sendEx.getMessage(), sendEx);
             }
-
         } catch (Exception e) {
-            // Captura final: evitar re-lanzar para que el listener no se detenga
-            log.error("💥 Error inesperado procesando mensaje: {}", e.getMessage(), e);
-            // NO re-lanzar RuntimeException aquí para evitar que el container detenga el listener
+            log.error("💥 Error inesperado procesando mensaje de cola: {}", e.getMessage(), e);
         }
     }
 }

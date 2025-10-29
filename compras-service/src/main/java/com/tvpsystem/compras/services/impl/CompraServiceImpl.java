@@ -5,7 +5,9 @@ import com.tvpsystem.compras.repositories.CompraRepository;
 import com.tvpsystem.compras.services.ICompraService;
 import com.tvpsystem.compras.services.IPaqueteService;
 import com.tvpsystem.compras.services.IOTNService;
+import com.tvpsystem.compras.services.RabbitMQProducer;
 import com.tvpsystem.compras.services.models.CompraRequestDTO;
+import com.tvpsystem.compras.services.models.EmailMessageDTO;
 import com.tvpsystem.compras.services.models.CompraResponseDTO;
 import com.tvpsystem.compras.services.models.ValidacionPaqueteRequest;
 import com.tvpsystem.compras.services.models.ValidacionPaqueteResponse;
@@ -23,13 +25,16 @@ public class CompraServiceImpl implements ICompraService {
     private final CompraRepository compraRepository;
     private final IPaqueteService paqueteService;
     private final IOTNService otnService;
+    private final RabbitMQProducer rabbitMQProducer;
 
     public CompraServiceImpl(CompraRepository compraRepository, 
                            IPaqueteService paqueteService, 
-                           IOTNService otnService) {
+                           IOTNService otnService,
+                           RabbitMQProducer rabbitMQProducer) {
         this.compraRepository = compraRepository;
         this.paqueteService = paqueteService;
         this.otnService = otnService;
+        this.rabbitMQProducer = rabbitMQProducer;
     }
 
     @Override
@@ -82,6 +87,39 @@ public class CompraServiceImpl implements ICompraService {
                 compra.setMensaje(mensajeFinal);
                 log.info("✅ COMPRA APROBADA - Código: {}", compra.getCodigoCompra());
                 log.info("✨ Todos los paquetes han sido validados exitosamente por OTN");
+                
+                // Enviar correo de confirmación
+                try {
+                    EmailMessageDTO emailMessage = new EmailMessageDTO(
+                        compra.getEmailCliente(),
+                        "🎉 Confirmación de Compra - Código: " + compra.getCodigoCompra(),
+                        String.format("""
+                            ¡Hola %s!
+                            
+                            Tu compra ha sido confirmada exitosamente.
+                            
+                            📋 Detalles de la compra:
+                            - Código: %s
+                            - Total: $%.2f
+                            - Paquetes: %s
+                            
+                            Gracias por tu compra. ¡Buen viaje! 🌎✈️
+                            
+                            Saludos,
+                            TVP System""",
+                            compra.getNombreCliente(),
+                            compra.getCodigoCompra(),
+                            compra.getTotal(),
+                            String.join(", ", compra.getCodigosPaquetes())
+                        )
+                    );
+                    
+                    rabbitMQProducer.sendEmailMessage(emailMessage);
+                    log.info("📧 Correo de confirmación enviado a la cola para: {}", compra.getEmailCliente());
+                } catch (Exception e) {
+                    log.error("❌ Error al enviar correo de confirmación: {}", e.getMessage());
+                    // No fallamos la compra si falla el envío del correo
+                }
             } else {
                 compra.setEstado(Compra.EstadoCompra.RECHAZADA);
                 mensajeFinal = "😞 COMPRA RECHAZADA - " + otnResponse.getMensaje();
