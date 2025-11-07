@@ -25,15 +25,18 @@ public class CompraServiceImpl implements ICompraService {
     private final CompraRepository compraRepository;
     private final IPaqueteService paqueteService;
     private final IOTNService otnService;
+    private final com.tvpsystem.compras.services.IPaymentService paymentService;
     private final RabbitMQProducer rabbitMQProducer;
 
     public CompraServiceImpl(CompraRepository compraRepository, 
                            IPaqueteService paqueteService, 
                            IOTNService otnService,
+                           com.tvpsystem.compras.services.IPaymentService paymentService,
                            RabbitMQProducer rabbitMQProducer) {
         this.compraRepository = compraRepository;
         this.paqueteService = paqueteService;
         this.otnService = otnService;
+        this.paymentService = paymentService;
         this.rabbitMQProducer = rabbitMQProducer;
     }
 
@@ -44,11 +47,19 @@ public class CompraServiceImpl implements ICompraService {
         log.info("📦 Paquetes solicitados: {}", compraRequest.getCodigosPaquetes());
 
         try {
-            // 1. Validar disponibilidad de paquetes
-            log.info("🔍 Validando disponibilidad de paquetes...");
-            if (!validarDisponibilidadPaquetes(compraRequest.getCodigosPaquetes())) {
-                log.error("❌ VALIDACIÓN FALLIDA: Algunos paquetes no están disponibles");
-                return crearRespuestaError("❌ No se puede procesar la compra: Algunos paquetes no están disponibles");
+            // 1. Validar disponibilidad de paquetes y fondos usando payment-service
+            log.info("🔍 Validando disponibilidad de paquetes y fondos con payment-service...");
+            com.tvpsystem.compras.services.models.PaymentRequestDTO paymentRequest = new com.tvpsystem.compras.services.models.PaymentRequestDTO();
+            paymentRequest.setClienteId(compraRequest.getIdCliente());
+            paymentRequest.setTotal(compraRequest.getTotal());
+            paymentRequest.setCodigosPaquetes(compraRequest.getCodigosPaquetes());
+            com.tvpsystem.compras.services.models.PaymentResponseDTO paymentResponse = paymentService.validarPago(paymentRequest);
+            if (!paymentResponse.isAprobado()) {
+                log.error("❌ VALIDACIÓN DE PAGO FALLIDA: {}", paymentResponse.getMensaje());
+                if (paymentResponse.getPaquetesFallidos() != null && !paymentResponse.getPaquetesFallidos().isEmpty()) {
+                    log.error("❌ Paquetes fallidos: {}", paymentResponse.getPaquetesFallidos());
+                }
+                return crearRespuestaError("❌ No se puede procesar la compra: " + paymentResponse.getMensaje());
             }
             log.info("✅ Validación de disponibilidad exitosa");
 

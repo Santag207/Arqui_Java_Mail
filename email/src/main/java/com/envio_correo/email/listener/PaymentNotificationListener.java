@@ -1,0 +1,173 @@
+package com.envio_correo.email.listener;
+
+import com.envio_correo.email.services.IEmailService;
+import com.envio_correo.email.services.models.EmailDTO;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class PaymentNotificationListener {
+
+    private final IEmailService emailService;
+
+    @RabbitListener(queues = "pago.queue")
+    public void handlePaymentNotification(Map<String, Object> notification) {
+        try {
+            log.info("📩 RECIBIENDO NOTIFICACIÓN - Keys disponibles: {}", notification.keySet());
+            
+            String clienteId = obtenerValorSeguro(notification, "clienteId", "ClienteDesconocido");
+            
+            // OBTENER EMAIL DE FORMA OBLIGATORIA - PRIMERO del mapeo local
+            String email = obtenerEmailForzado(clienteId);
+            log.info("🎯 EMAIL ASIGNADO OBLIGATORIAMENTE: {} -> {}", clienteId, email);
+            
+            Boolean aprobado = obtenerValorSeguroBoolean(notification, "aprobado");
+            String mensaje = obtenerValorSeguro(notification, "mensaje", "Sin mensaje");
+            Double total = obtenerValorSeguroDouble(notification, "total", 0.0);
+            
+            @SuppressWarnings("unchecked")
+            List<String> codigosPaquetes = (List<String>) notification.get("codigosPaquetes");
+            
+            log.info("🚀 ENVIANDO EMAIL A: {} para cliente: {}", email, clienteId);
+            
+            if (aprobado != null && aprobado) {
+                enviarEmailConfirmacion(email, clienteId, total, codigosPaquetes, mensaje);
+            } else {
+                enviarEmailRechazo(email, clienteId, mensaje);
+            }
+            
+        } catch (Exception e) {
+            log.error("❌ Error procesando notificación de pago: ", e);
+        }
+    }
+
+    // MÉTODO CORREGIDO: Obtener email OBLIGATORIO del mapeo local
+    private String obtenerEmailForzado(String clienteId) {
+        // MAPEO FIJO Y OBLIGATORIO - NO usa el email de la notificación
+        Map<String, String> mapeoEmails = Map.of(
+            "CLI-1001", "castrozsantiago@javeriana.edu.co",
+            "CLI-2002", "castrosantiago476@gmail.com", 
+            "CLI-3003", "castrosantiago3@gmail.com",
+            "CLI-4004", "santiago.castro@example.com",
+            "CLI-5005", "usuario.prueba@example.com"
+        );
+        
+        String email = mapeoEmails.get(clienteId);
+        
+        if (email == null) {
+            // SOLO para clientes no mapeados, usar el default
+            email = clienteId.toLowerCase() + "@toursadventure.com";
+            log.warn("⚠️ Cliente no encontrado en mapeo: {}, usando default: {}", clienteId, email);
+        } else {
+            log.info("✅ Email encontrado en mapeo local: {} -> {}", clienteId, email);
+        }
+        
+        return email;
+    }
+
+    // MÉTODOS AUXILIARES (se mantienen igual)
+    private String obtenerValorSeguro(Map<String, Object> notification, String key, String defaultValue) {
+        try {
+            Object value = notification.get(key);
+            return value != null ? value.toString() : defaultValue;
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private Boolean obtenerValorSeguroBoolean(Map<String, Object> notification, String key) {
+        try {
+            Object value = notification.get(key);
+            if (value instanceof Boolean) return (Boolean) value;
+            if (value instanceof String) return Boolean.parseBoolean((String) value);
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private Double obtenerValorSeguroDouble(Map<String, Object> notification, String key, Double defaultValue) {
+        try {
+            Object value = notification.get(key);
+            if (value instanceof Double) return (Double) value;
+            if (value instanceof Number) return ((Number) value).doubleValue();
+            if (value instanceof String) return Double.parseDouble((String) value);
+            return defaultValue;
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    private void enviarEmailConfirmacion(String email, String clienteId, Double total, 
+                                       List<String> codigosPaquetes, String mensaje) {
+        try {
+            EmailDTO emailDTO = new EmailDTO();
+            emailDTO.setDestinatario(email);
+            emailDTO.setAsunto("✅ Confirmación de Compra - Tours Adventure");
+            
+            String paquetesStr = codigosPaquetes != null ? 
+                String.join(", ", codigosPaquetes) : "No especificado";
+            
+            String mensajeHtml = "<h2>¡Compra Confirmada!</h2>" +
+                "<p>Hola <strong>" + clienteId + "</strong>,</p>" +
+                "<p>¡Tu compra ha sido confirmada exitosamente!</p>" +
+                "<h3>📋 Detalles de la compra:</h3>" +
+                "<ul>" +
+                "<li><strong>Cliente ID:</strong> " + clienteId + "</li>" +
+                "<li><strong>Email destino:</strong> " + email + "</li>" +
+                "<li><strong>Paquetes:</strong> " + paquetesStr + "</li>" +
+                "<li><strong>Total pagado:</strong> $" + total + "</li>" +
+                "<li><strong>Estado:</strong> " + mensaje + "</li>" +
+                "</ul>" +
+                "<p><em>Este email fue enviado usando el mapeo local del email-service</em></p>" +
+                "<p>¡Gracias por confiar en Tours Adventure!</p>" +
+                "<br>" +
+                "<p>Saludos,<br>Equipo de Tours Adventure</p>";
+            
+            emailDTO.setMensaje(mensajeHtml);
+            
+            emailService.sendMail(emailDTO);
+            log.info("✅ EMAIL ENVIADO EXITOSAMENTE a: {} para cliente: {}", email, clienteId);
+            
+        } catch (Exception e) {
+            log.error("❌ Error enviando email de confirmación a {}: {}", email, e.getMessage());
+        }
+    }
+
+    private void enviarEmailRechazo(String email, String clienteId, String mensaje) {
+        try {
+            EmailDTO emailDTO = new EmailDTO();
+            emailDTO.setDestinatario(email);
+            emailDTO.setAsunto("❌ Pago Rechazado - Tours Adventure");
+            
+            String mensajeHtml = "<h2>Pago Rechazado</h2>" +
+                "<p>Hola <strong>" + clienteId + "</strong>,</p>" +
+                "<p>Lamentamos informarte que tu pago ha sido rechazado.</p>" +
+                "<h3>📋 Detalles:</h3>" +
+                "<ul>" +
+                "<li><strong>Cliente ID:</strong> " + clienteId + "</li>" +
+                "<li><strong>Email destino:</strong> " + email + "</li>" +
+                "<li><strong>Razón:</strong> " + mensaje + "</li>" +
+                "</ul>" +
+                "<p><em>Este email fue enviado usando el mapeo local del email-service</em></p>" +
+                "<p>Por favor, verifica tus fondos e intenta nuevamente.</p>" +
+                "<br>" +
+                "<p>Saludos,<br>Equipo de Tours Adventure</p>";
+            
+            emailDTO.setMensaje(mensajeHtml);
+            
+            emailService.sendMail(emailDTO);
+            log.info("✅ EMAIL DE RECHAZO ENVIADO a: {} para cliente: {}", email, clienteId);
+            
+        } catch (Exception e) {
+            log.error("❌ Error enviando email de rechazo a {}: {}", email, e.getMessage());
+        }
+    }
+}

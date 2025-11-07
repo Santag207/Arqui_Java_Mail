@@ -11,4 +11,5 @@ public class CompraRequestDTO {
     private String telefonoCliente;
     private List<String> codigosPaquetes;
     private String idSolicitud;
+    private Double total;
 }

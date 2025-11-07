@@ -23,19 +23,31 @@ public class RabbitMQConfig {
     @Value("${rabbitmq.routing.email.key}")
     private String emailRoutingKey;
 
-    // Bean para la cola de email
+    // Bean para la cola de email ORIGINAL (se mantiene)
     @Bean
     public Queue emailQueue() {
         return new Queue(emailQueue);
     }
 
-    // Bean para el exchange
+    // NUEVO: Bean para la cola de pagos
+    @Bean
+    public Queue pagoQueue() {
+        return new Queue("pago.queue", true);
+    }
+
+    // Bean para el exchange ORIGINAL (se mantiene)
     @Bean
     public TopicExchange exchange() {
         return new TopicExchange(exchange);
     }
 
-    // Bean para binding entre exchange y cola usando routing key
+    // NUEVO: Bean para el exchange de compras
+    @Bean
+    public TopicExchange compraExchange() {
+        return new TopicExchange("compra.exchange");
+    }
+
+    // Bean para binding entre exchange y cola usando routing key ORIGINAL (se mantiene)
     @Bean
     public Binding emailBinding() {
         return BindingBuilder
@@ -44,7 +56,16 @@ public class RabbitMQConfig {
                 .with(emailRoutingKey);
     }
 
-    // Bean para convertir mensajes a JSON
+    // NUEVO: Binding para la cola de pagos
+    @Bean
+    public Binding pagoBinding() {
+        return BindingBuilder
+                .bind(pagoQueue())
+                .to(compraExchange())
+                .with("pago.routingkey");
+    }
+
+    // Bean para convertir mensajes a JSON ORIGINAL (se mantiene)
     @Bean
     public Jackson2JsonMessageConverter jackson2JsonMessageConverter(ObjectMapper objectMapper) {
         return new Jackson2JsonMessageConverter(objectMapper);
@@ -60,7 +81,7 @@ public class RabbitMQConfig {
         return factory;
     }
 
-    // Si usas RabbitTemplate en esta app también:
+    // Si usas RabbitTemplate en esta app también ORIGINAL (se mantiene):
     @Bean
     public org.springframework.amqp.rabbit.core.RabbitTemplate rabbitTemplate(
             ConnectionFactory connectionFactory,
