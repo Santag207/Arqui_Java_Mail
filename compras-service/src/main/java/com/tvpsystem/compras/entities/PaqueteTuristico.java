@@ -1,64 +1,71 @@
-package com.tvpsystem.compras.entities;
+package com.tours.compras.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
-@Data
 @Entity
-@Table(name = "paquetes_turisticos")
-public class PaqueteTuristico {
+@Table(name = "paquetes")
+@Data
+public class Paquete {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(unique = true, nullable = false)
     private String codigo;
 
     @Column(nullable = false)
     private String nombre;
 
-    @Column(length = 1000)
     private String descripcion;
 
     @Column(nullable = false)
     private String destino;
 
-    @Column(nullable = false)
+    @Column(name = "duracion_dias", nullable = false)
     private Integer duracionDias;
 
     @Column(nullable = false)
-    private Double precio;
+    private BigDecimal precio;
 
+    @Column(name = "cupos_disponibles", nullable = false)
     private Integer cuposDisponibles;
 
-    @Enumerated(EnumType.STRING)
-    private EstadoPaquete estado;
+    @Column(nullable = false)
+    private String estado; // DISPONIBLE, AGOTADO, CANCELADO
 
+    // NUEVO CAMPO: Fecha de salida del tour
+    @Column(name = "fecha_salida", nullable = false)
+    private LocalDate fechaSalida;
+
+    // NUEVO CAMPO: Fecha de regreso (calculada)
+    @Column(name = "fecha_regreso", nullable = false)
+    private LocalDate fechaRegreso;
+
+    @Column(name = "fecha_inicio")
     private LocalDate fechaInicio;
+
+    @Column(name = "fecha_fin")
     private LocalDate fechaFin;
 
-    @Column(nullable = false)
-    private LocalDateTime fechaCreacion;
+    @CreationTimestamp
+    @Column(name = "created_at")
+    private LocalDateTime createdAt;
 
-    private LocalDateTime fechaActualizacion;
+    @UpdateTimestamp
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 
+    // Método para calcular fecha de regreso automáticamente
     @PrePersist
-    protected void onCreate() {
-        fechaCreacion = LocalDateTime.now();
-        fechaActualizacion = LocalDateTime.now();
-        if (estado == null) {
-            estado = EstadoPaquete.DISPONIBLE;
-        }
-    }
-
     @PreUpdate
-    protected void onUpdate() {
-        fechaActualizacion = LocalDateTime.now();
-    }
-
-    public enum EstadoPaquete {
-        DISPONIBLE,
-        NO_DISPONIBLE,
-        AGOTADO,
-        EN_VERIFICACION
+    private void calcularFechas() {
+        if (fechaSalida != null && duracionDias != null) {
+            this.fechaRegreso = fechaSalida.plusDays(duracionDias);
+        }
     }
 }

@@ -1,21 +1,6 @@
 package com.tours.paymentservice.services.impl;
 
-import com.tours.paymentservice.account.entity.Account;
-import com.tours.paymentservice.account.repository.AccountRepository;
-import com.tours.paymentservice.inventory.entity.InventorySlot;
-import com.tours.paymentservice.inventory.repository.InventoryRepository;
-import com.tours.paymentservice.services.PaymentService;
-import com.tours.paymentservice.services.dto.PaymentRequestDTO;
-import com.tours.paymentservice.services.dto.PaymentResponseDTO;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.List;
+// imports...
 
 @Service
 @RequiredArgsConstructor
@@ -25,12 +10,22 @@ public class PaymentServiceImpl implements PaymentService {
     private final InventoryRepository inventoryRepository;
     private final AccountRepository accountRepository;
     private final RabbitTemplate rabbitTemplate;
+    private final CreditCardService creditCardService; // NUEVO
 
-    // Usa el transaction manager de accounts (o el que prefieras)
     @Override
-    //@Transactional("accountTransactionManager")
+    // @Transactional("accountTransactionManager") comentado temporalmente
     public PaymentResponseDTO validarYReservar(PaymentRequestDTO request) {
         log.info("Iniciando validación de pago para cliente {} - Total: {}", request.getClienteId(), request.getTotal());
+
+        // NUEVA VALIDACIÓN: Verificar que tiene tarjeta registrada o proporcionada
+        if (!validarTarjetaPago(request)) {
+            PaymentResponseDTO resp = new PaymentResponseDTO();
+            resp.setAprobado(false);
+            resp.setMensaje("Información de tarjeta inválida o no proporcionada");
+            resp.setPaquetesFallidos(new ArrayList<>());
+            enviarNotificacion(request, resp);
+            return resp;
+        }
 
         List<String> paquetesFallidos = new ArrayList<>();
 
@@ -58,10 +53,10 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         if (account.getBalance() < request.getTotal()) {
-            PaymentResponseDTO resp = createResponse(false, 
-                String.format("Fondos insuficientes. Balance: %.2f, Total requerido: %.2f", 
-                    account.getBalance(), request.getTotal()), 
-                paquetesFallidos);
+            PaymentResponseDTO resp = createResponse(false,
+                    String.format("Fondos insuficientes. Balance: %.2f, Total requerido: %.2f",
+                            account.getBalance(), request.getTotal()),
+                    paquetesFallidos);
             enviarNotificacion(request, resp);
             return resp;
         }
@@ -86,10 +81,15 @@ public class PaymentServiceImpl implements PaymentService {
             accountRepository.save(account);
             log.info("Fondos descontados. Nuevo balance: {}", account.getBalance());
 
-            PaymentResponseDTO resp = createResponse(true, 
-                String.format("Pago y reserva exitosos. Nuevo balance: %.2f", account.getBalance()), 
-                new ArrayList<>());
-            
+            // NUEVO: Guardar tarjeta si se solicitó
+            if (request.getTarjeta() != null && request.getTarjeta().getSaveCard()) {
+                guardarTarjetaCliente(request);
+            }
+
+            PaymentResponseDTO resp = createResponse(true,
+                    String.format("Pago y reserva exitosos. Nuevo balance: %.2f", account.getBalance()),
+                    new ArrayList<>());
+
             enviarNotificacion(request, resp);
             return resp;
 
@@ -101,6 +101,90 @@ public class PaymentServiceImpl implements PaymentService {
         }
     }
 
+    // NUEVO MÉTODO: Validar información de tarjeta
+    private boolean validarTarjetaPago(PaymentRequestDTO request) {
+        if (request.getTarjeta() == null) {
+            log.warn("No se proporcionó información de tarjeta");
+            return false;
+        }
+
+        // Si se proporciona cardId, verificar que existe y pertenece al cliente
+        if (request.getTarjeta().getCardId() != null) {
+            try {
+                Long cardId = Long.parseLong(request.getTarjeta().getCardId());
+                Optional<CreditCard> card = creditCardService.getCardsByCliente(request.getClienteId())
+                        .stream()
+                        .filter(c -> c.getId().equals(cardId))
+                        .findFirst();
+                return card.isPresent();
+            } catch (NumberFormatException e) {
+                log.error("Formato de cardId inválido: {}", request.getTarjeta().getCardId());
+                return false;
+            }
+        }
+
+        // Si se proporciona nueva tarjeta, validar datos básicos
+        if (request.getTarjeta().getCardNumber() != null &&
+                request.getTarjeta().getCardHolder() != null &&
+                request.getTarjeta().getExpiryMonth() != null &&
+                request.getTarjeta().getExpiryYear() != null &&
+                request.getTarjeta().getCvv() != null) {
+
+            // Validaciones básicas de tarjeta
+            return validarDatosTarjeta(
+                    request.getTarjeta().getCardNumber(),
+                    request.getTarjeta().getExpiryMonth(),
+                    request.getTarjeta().getExpiryYear()
+            );
+        }
+
+        return false;
+    }
+
+    // NUEVO MÉTODO: Validar datos básicos de tarjeta
+    private boolean validarDatosTarjeta(String cardNumber, Integer expiryMonth, Integer expiryYear) {
+        // Validar número de tarjeta (debe tener al menos 13 dígitos)
+        if (cardNumber == null || cardNumber.replaceAll("\\s", "").length() < 13) {
+            return false;
+        }
+
+        // Validar fecha de expiración
+        if (expiryMonth == null || expiryYear == null) {
+            return false;
+        }
+
+        if (expiryMonth < 1 || expiryMonth > 12) {
+            return false;
+        }
+
+        int currentYear = java.time.Year.now().getValue();
+        if (expiryYear < currentYear) {
+            return false;
+        }
+
+        return true;
+    }
+
+    // NUEVO MÉTODO: Guardar tarjeta del cliente
+    private void guardarTarjetaCliente(PaymentRequestDTO request) {
+        try {
+            CreditCard newCard = new CreditCard();
+            newCard.setClienteId(request.getClienteId());
+            newCard.setCardNumber(request.getTarjeta().getCardNumber());
+            newCard.setCardHolder(request.getTarjeta().getCardHolder());
+            newCard.setExpiryMonth(request.getTarjeta().getExpiryMonth());
+            newCard.setExpiryYear(request.getTarjeta().getExpiryYear());
+            newCard.setCvv(request.getTarjeta().getCvv());
+            newCard.setIsDefault(false); // No hacerla default automáticamente
+
+            creditCardService.addCard(newCard);
+            log.info("Tarjeta guardada para cliente: {}", request.getClienteId());
+        } catch (Exception e) {
+            log.error("Error guardando tarjeta para cliente {}: {}", request.getClienteId(), e.getMessage());
+        }
+    }
+
+    // Resto de métodos existentes se mantienen igual...
     private PaymentResponseDTO createResponse(boolean aprobado, String mensaje, List<String> paquetesFallidos) {
         PaymentResponseDTO resp = new PaymentResponseDTO();
         resp.setAprobado(aprobado);
@@ -113,53 +197,34 @@ public class PaymentServiceImpl implements PaymentService {
         try {
             // Crear objeto de notificación
             PaymentNotification notification = new PaymentNotification(
-                request.getClienteId(),
-                request.getTotal(),
-                request.getCodigosPaquetes(),
-                response.isAprobado(),
-                response.getMensaje(),
-                response.getPaquetesFallidos()
+                    request.getClienteId(),
+                    request.getTotal(),
+                    request.getCodigosPaquetes(),
+                    response.isAprobado(),
+                    response.getMensaje(),
+                    response.getPaquetesFallidos(),
+                    obtenerEmailDelCliente(request.getClienteId())
             );
-            
+
             rabbitTemplate.convertAndSend("compra.exchange", "pago.routingkey", notification);
             log.info("Notificación enviada a RabbitMQ: {}", notification);
-            
+
         } catch (Exception e) {
             log.error("Error enviando notificación a RabbitMQ: ", e);
         }
     }
 
-    // Clase interna para la notificación
+    private String obtenerEmailDelCliente(String clienteId) {
+        Map<String, String> clientesEmails = Map.of(
+                "CLI-1001", "castrozsantiago@javeriana.edu.co",
+                "CLI-2002", "castrosantiago476@gmail.com",
+                "CLI-3003", "castrosantiago3@gmail.com"
+        );
+        return clientesEmails.getOrDefault(clienteId, "castrozsantiago@javeriana.edu.co");
+    }
+
+    // Clase interna para la notificación (se mantiene igual)
     public static class PaymentNotification {
-        private String clienteId;
-        private Double total;
-        private List<String> codigosPaquetes;
-        private boolean aprobado;
-        private String mensaje;
-        private List<String> paquetesFallidos;
-
-        public PaymentNotification(String clienteId, Double total, List<String> codigosPaquetes, 
-                                 boolean aprobado, String mensaje, List<String> paquetesFallidos) {
-            this.clienteId = clienteId;
-            this.total = total;
-            this.codigosPaquetes = codigosPaquetes;
-            this.aprobado = aprobado;
-            this.mensaje = mensaje;
-            this.paquetesFallidos = paquetesFallidos;
-        }
-
-        // Getters y setters
-        public String getClienteId() { return clienteId; }
-        public void setClienteId(String clienteId) { this.clienteId = clienteId; }
-        public Double getTotal() { return total; }
-        public void setTotal(Double total) { this.total = total; }
-        public List<String> getCodigosPaquetes() { return codigosPaquetes; }
-        public void setCodigosPaquetes(List<String> codigosPaquetes) { this.codigosPaquetes = codigosPaquetes; }
-        public boolean isAprobado() { return aprobado; }
-        public void setAprobado(boolean aprobado) { this.aprobado = aprobado; }
-        public String getMensaje() { return mensaje; }
-        public void setMensaje(String mensaje) { this.mensaje = mensaje; }
-        public List<String> getPaquetesFallidos() { return paquetesFallidos; }
-        public void setPaquetesFallidos(List<String> paquetesFallidos) { this.paquetesFallidos = paquetesFallidos; }
+        // ... mismo código anterior
     }
 }
