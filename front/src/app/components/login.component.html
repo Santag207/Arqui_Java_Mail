@@ -1,0 +1,19 @@
+<div class="login-wrap">
+  <div class="login-card">
+    <h2>Iniciar sesión</h2>
+    <form [formGroup]="form" (ngSubmit)="submit()">
+      <div class="field">
+        <label>Email</label>
+        <input formControlName="email" type="email" placeholder="usuario@mail.com" />
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" formControlName="password" placeholder="********" />
+      </div>
+      <div class="actions">
+        <button type="submit" [disabled]="form.invalid">Entrar</button>
+      </div>
+    </form>
+    <div *ngIf="error" class="error">{{error}}</div>
+  </div>
+</div>

@@ -1,0 +1,38 @@
+<div class="payment-wrap">
+  <div class="payment-card">
+    <h2>Mis Métodos de Pago</h2>
+    
+    <!-- Saldo Total -->
+    <div class="balance-section">
+      <h3>Saldo Total Disponible</h3>
+      <div class="balance-amount">${{ balance.toFixed(2) }}</div>
+    </div>
+
+    <!-- Lista de Tarjetas -->
+    <div class="cards-section">
+      <h3>Tarjetas Registradas</h3>
+      
+      <div *ngIf="cards.length === 0" class="no-cards">
+        <p>No tienes tarjetas registradas</p>
+      </div>
+
+      <div *ngFor="let card of cards" class="card-item">
+        <div class="card-icon">
+          <span *ngIf="card.type === 'VISA'">💳</span>
+          <span *ngIf="card.type === 'MC'">💳</span>
+          <span *ngIf="!card.type">💳</span>
+        </div>
+        <div class="card-info">
+          <div class="card-type">{{ card.type || 'Tarjeta' }} terminada en {{ card.last4 }}</div>
+          <div class="card-balance">Saldo: ${{ (card.balance || 0).toFixed(2) }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Acciones -->
+    <div class="actions-section">
+      <button class="btn-primary">Agregar Nueva Tarjeta</button>
+      <button class="btn-secondary">Recargar Saldo</button>
+    </div>
+  </div>
+</div>

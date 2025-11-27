@@ -1,0 +1,9 @@
+<div class="card home-card">
+  <h2>Bienvenido {{ userEmail || 'viajero' }}</h2>
+  <p>Elige una opción:</p>
+  <div class="grid">
+    <button (click)="go('packages')">Comprar paquetes</button>
+    <button (click)="go('payment')">Créditos / Tarjetas</button>
+    <button (click)="go('profile')">Mi perfil</button>
+  </div>
+</div>
