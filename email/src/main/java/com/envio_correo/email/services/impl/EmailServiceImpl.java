@@ -34,11 +34,7 @@ public class EmailServiceImpl implements IEmailService {
 
     @Override
     public void sendMail(EmailDTO email) throws MessagingException {
-        // For testing: override all recipients to the test address
-        final String TEST_EMAIL = "castrosantiago476@gmail.com";
-        log.info("🔄 INICIANDO ENVÍO DE CORREO (original destinatario: {})", email.getDestinatario());
-        email.setDestinatario(TEST_EMAIL);
-        log.info("🔁 Destinatario forzado a: {}", TEST_EMAIL);
+        log.info("🔄 INICIANDO ENVÍO DE CORREO a: {}", email.getDestinatario());
         
         // 1. Validar datos de entrada
         if (email.getDestinatario() == null || email.getDestinatario().trim().isEmpty()) {

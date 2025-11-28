@@ -1,0 +1,163 @@
+===============================================
+FLUJO COMPLETO - SISTEMA DE COMPRAS CON EMAILS
+===============================================
+
+PASO 1: REGISTRAR USUARIO
+========================
+POST http://localhost:8084/auth/register
+Content-Type: application/json
+
+{
+  "username": "johndoe",
+  "email": "johndoe@gmail.com",
+  "password": "Password123!",
+  "cedula": "1098765432",
+  "direccion": "Cra 7 #45-23, Apto 501"
+}
+
+RESPUESTA ESPERADA:
+{
+  "accessToken": "eyJhbGciOiJSUzI1NiJ9...[MUY LARGO]",
+  "refreshToken": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+  "type": "Bearer",
+  "expiresIn": 900000,
+  "user": {
+    "id": 1,
+    "username": "johndoe",
+    "email": "johndoe@gmail.com",
+    "cedula": "1098765432",
+    "direccion": "Cra 7 #45-23, Apto 501",
+    "roles": ["USER"],
+    "createdAt": "2025-11-28T..."
+  }
+}
+
+→ COPIA EL accessToken COMPLETO PARA EL PASO 5
+
+---
+
+PASO 2: CREAR CUENTA EN PAYMENT-SERVICE
+=======================================
+POST http://localhost:8090/api/accounts/create
+Content-Type: application/json
+
+{
+  "clienteId": "1",
+  "balance": 100.00
+}
+
+RESPUESTA ESPERADA:
+{
+  "success": true,
+  "message": "Cuenta creada exitosamente",
+  "clienteId": "1",
+  "balance": 100.0
+}
+
+---
+
+PASO 3: AGREGAR FONDOS
+======================
+POST http://localhost:8090/api/accounts/add-balance
+Content-Type: application/json
+
+{
+  "clienteId": "1",
+  "amount": 500.00
+}
+
+RESPUESTA ESPERADA:
+{
+  "success": true,
+  "message": "Fondos agregados exitosamente",
+  "clienteId": "1",
+  "amountAdded": 500.0,
+  "newBalance": 600.0
+}
+
+---
+
+PASO 4: VERIFICAR DATOS EN CACHE
+================================
+GET http://localhost:8090/api/payment/users/get-user/1
+
+RESPUESTA ESPERADA:
+{
+  "clienteId": "1",
+  "email": "johndoe@gmail.com",
+  "cedula": "1098765432",
+  "direccion": "Cra 7 #45-23, Apto 501"
+}
+
+---
+
+PASO 5: HACER LA COMPRA
+=======================
+POST http://localhost:8082/api/compras/procesar
+Content-Type: application/json
+Authorization: Bearer [PEGA_AQUI_EL_accessToken_DEL_PASO_1]
+
+{
+  "idCliente": "1",
+  "emailCliente": "johndoe@gmail.com",
+  "nombreCliente": "John Doe",
+  "telefonoCliente": "3105551234",
+  "codigosPaquetes": ["PKG-001"],
+  "idSolicitud": "SOL-JOHNDOE-001",
+  "total": 100.00
+}
+
+RESPUESTA ESPERADA:
+{
+  "id": 1,
+  "clienteId": "1",
+  "exitosa": true,
+  "mensaje": "Compra procesada exitosamente",
+  "total": 150.0,
+  "balance": 450.0
+}
+
+{
+    "id": 1,
+    "codigoCompra": "COMP-1764301036795",
+    "idCliente": "1",
+    "nombreCliente": "John Doe",
+    "emailCliente": "johndoe@gmail.com",
+    "telefonoCliente": "3105551234",
+    "codigosPaquetes": [
+        "PKG-001"
+    ],
+    "total": 0.0,
+    "estado": "APROBADA",
+    "mensaje": "🎉 ¡COMPRA EXITOSA! ✅ Todos los paquetes han sido APROBADOS. Puede continuar con la compra.",
+    "fechaCreacion": "2025-11-27T22:37:16.795616221",
+    "fechaActualizacion": "2025-11-27T22:37:16.795636789",
+    "exitosa": true,
+    "detalleResultado": "🎉 ¡COMPRA EXITOSA! ✅ Todos los paquetes han sido APROBADOS. Puede continuar con la compra."
+
+---
+
+PASO 6: VERIFICAR EMAIL
+=======================
+✓ Revisa johndoe@gmail.com
+
+DEBERÍAS RECIBIR EMAIL CON:
+- Asunto: ✅ Confirmación de Compra - Tours Adventure
+- Contenido:
+  Cédula: 1098765432
+  Dirección: Cra 7 #45-23, Apto 501
+  Paquetes: PKG-001
+  Total: $150.0
+
+---
+
+NOTAS IMPORTANTES:
+==================
+• El accessToken es muy largo (más de 500 caracteres)
+• Copia TODO el token, no solo la primera parte
+• La cédula y dirección se envían en el email de confirmación
+• El email de rechazo SOLO muestra el email del cliente
+• El clienteId debe ser un STRING (ej: "1")
+• Los fondos deben ser >= al total de la compra
+
+===============================================

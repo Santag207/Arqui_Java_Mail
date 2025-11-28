@@ -1,1 +1,0 @@
-{"ast":null,"code":"export const environment = {\n  production: false,\n  authServiceUrl: 'http://localhost:8081',\n  comprasServiceUrl: 'http://localhost:8080'\n};","map":null,"metadata":{},"sourceType":"module","externalDependencies":[]}

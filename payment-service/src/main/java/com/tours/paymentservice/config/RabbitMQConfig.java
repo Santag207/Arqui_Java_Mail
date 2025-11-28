@@ -10,26 +10,49 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class RabbitMQConfig {
 
+    // ======== QUEUES ========
+    @Bean
+    public Queue usuarioRegistradoQueue() {
+        return new Queue("usuario.registrado.queue", true);
+    }
+
     @Bean
     public Queue pagoQueue() {
         return new Queue("pago.queue", true);
     }
-    
+
+    // ======== EXCHANGES ========
     @Bean
-    public TopicExchange exchange() {
-        return new TopicExchange("compra.exchange");
+    public TopicExchange usuarioExchange() {
+        return new TopicExchange("usuario.exchange", true, false);
     }
-    
+
     @Bean
-    public Binding pagoBinding(Queue pagoQueue, TopicExchange exchange) {
-        return BindingBuilder.bind(pagoQueue).to(exchange).with("pago.routingkey");
+    public TopicExchange compraExchange() {
+        return new TopicExchange("compra.exchange", true, false);
     }
-    
+
+    // ======== BINDINGS ========
+    @Bean
+    public Binding usuarioRegistradoBinding(Queue usuarioRegistradoQueue, TopicExchange usuarioExchange) {
+        return BindingBuilder.bind(usuarioRegistradoQueue)
+                .to(usuarioExchange)
+                .with("usuario.registrado");
+    }
+
+    @Bean
+    public Binding pagoBinding(Queue pagoQueue, TopicExchange compraExchange) {
+        return BindingBuilder.bind(pagoQueue)
+                .to(compraExchange)
+                .with("pago.routingkey");
+    }
+
+    // ======== MESSAGE CONVERTER ========
     @Bean
     public Jackson2JsonMessageConverter jsonMessageConverter() {
         return new Jackson2JsonMessageConverter();
     }
-    
+
     @Bean
     public RabbitTemplate rabbitTemplate(ConnectionFactory connectionFactory) {
         RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);

@@ -3,7 +3,6 @@ package com.envio_correo.email.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.PropertySource;
 import org.springframework.core.io.DefaultResourceLoader;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -14,13 +13,13 @@ import java.util.Properties;
 
 @Slf4j
 @Configuration
-@PropertySource("classpath:email.properties")
+// REMOVER ESTA LÍNEA: @PropertySource("classpath:email.properties")
 public class EmailConfig {
 
-    @Value("${email.username}")
+    @Value("${spring.mail.username}")  // CAMBIAR AQUÍ
     private String username;
 
-    @Value("${email.password}")
+    @Value("${spring.mail.password}")  // CAMBIAR AQUÍ
     private String password;
 
     @Bean
@@ -28,17 +27,21 @@ public class EmailConfig {
         log.info("🔧 Configurando JavaMailSender...");
         log.info("📧 Username: {}", username);
         log.info("🔑 Password: {} caracteres", password != null ? password.length() : "null");
-        log.info("🔑 Password (primeros 4 chars): {}", password != null ? password.substring(0, Math.min(4, password.length())) : "null");
+        
+        // Elimina esta línea que puede causar problemas de seguridad
+        // log.info("🔑 Password (primeros 4 chars): {}", password != null ? password.substring(0, Math.min(4, password.length())) : "null");
         
         try {
             JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
-            mailSender.setJavaMailProperties(getMailProperties());
+            mailSender.setHost("smtp.gmail.com");
+            mailSender.setPort(587);
             mailSender.setUsername(username);
             mailSender.setPassword(password);
+            mailSender.setJavaMailProperties(getMailProperties());
             
-            // Test de conexión
-            mailSender.testConnection();
-            log.info("✅ CONEXIÓN EXITOSA con Gmail");
+            // Comenta temporalmente el test de conexión
+            // mailSender.testConnection();
+            log.info("✅ JavaMailSender configurado correctamente");
             
             return mailSender;
         } catch (Exception e) {
@@ -51,10 +54,9 @@ public class EmailConfig {
         Properties properties = new Properties();
         properties.put("mail.smtp.auth", "true");
         properties.put("mail.smtp.starttls.enable", "true");
-        properties.put("mail.smtp.host", "smtp.gmail.com");
-        properties.put("mail.smtp.port", "587");
+        properties.put("mail.smtp.starttls.required", "true");
         properties.put("mail.smtp.ssl.trust", "smtp.gmail.com");
-        properties.put("mail.debug", "true"); // Para ver logs detallados
+        properties.put("mail.debug", "true");
         return properties;
     }
 

@@ -2,11 +2,12 @@ package com.envio_correo.email.listener;
 
 import com.envio_correo.email.services.IEmailService;
 import com.envio_correo.email.services.models.EmailDTO;
+import com.envio_correo.email.services.event.UserRegisteredListener;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
-
+import org.springframework.web.client.RestTemplate;
 import java.util.List;
 import java.util.Map;
 
@@ -16,6 +17,7 @@ import java.util.Map;
 public class PaymentNotificationListener {
 
     private final IEmailService emailService;
+    private final RestTemplate restTemplate;
 
     @RabbitListener(queues = "pago.queue")
     public void handlePaymentNotification(Map<String, Object> notification) {
@@ -24,9 +26,13 @@ public class PaymentNotificationListener {
             
             String clienteId = obtenerValorSeguro(notification, "clienteId", "ClienteDesconocido");
             
-            // OBTENER EMAIL DE FORMA OBLIGATORIA - PRIMERO del mapeo local
-            String email = obtenerEmailForzado(clienteId);
-            log.info("🎯 EMAIL ASIGNADO OBLIGATORIAMENTE: {} -> {}", clienteId, email);
+            // OBTENER EMAIL DE FORMA DINÁMICA - Primero del cache de payment-service
+            String email = obtenerEmailDinamicamente(clienteId);
+            log.info("🎯 EMAIL ASIGNADO DINÁMICAMENTE: {} -> {}", clienteId, email);
+            
+            // Obtener cédula y dirección
+            String cedula = obtenerValorSeguro(notification, "cedula", "N/A");
+            String direccion = obtenerValorSeguro(notification, "direccion", "N/A");
             
             Boolean aprobado = obtenerValorSeguroBoolean(notification, "aprobado");
             String mensaje = obtenerValorSeguro(notification, "mensaje", "Sin mensaje");
@@ -35,10 +41,11 @@ public class PaymentNotificationListener {
             @SuppressWarnings("unchecked")
             List<String> codigosPaquetes = (List<String>) notification.get("codigosPaquetes");
             
-            log.info("🚀 ENVIANDO EMAIL A: {} para cliente: {}", email, clienteId);
+            log.info("🚀 ENVIANDO EMAIL A: {} para cliente: {} (Cédula: {}, Dirección: {})", 
+                email, clienteId, cedula, direccion);
             
             if (aprobado != null && aprobado) {
-                enviarEmailConfirmacion(email, clienteId, total, codigosPaquetes, mensaje);
+                enviarEmailConfirmacion(email, clienteId, total, codigosPaquetes, mensaje, cedula, direccion);
             } else {
                 enviarEmailRechazo(email, clienteId, mensaje);
             }
@@ -48,28 +55,32 @@ public class PaymentNotificationListener {
         }
     }
 
-    // MÉTODO CORREGIDO: Obtener email OBLIGATORIO del mapeo local
-    private String obtenerEmailForzado(String clienteId) {
-        // MAPEO FIJO Y OBLIGATORIO - NO usa el email de la notificación
-        Map<String, String> mapeoEmails = Map.of(
-            "CLI-1001", "castrozsantiago@javeriana.edu.co",
-            "CLI-2002", "castrosantiago476@gmail.com", 
-            "CLI-3003", "castrosantiago3@gmail.com",
-            "CLI-4004", "santiago.castro@example.com",
-            "CLI-5005", "usuario.prueba@example.com"
-        );
-        
-        String email = mapeoEmails.get(clienteId);
-        
-        if (email == null) {
-            // SOLO para clientes no mapeados, usar el default
-            email = clienteId.toLowerCase() + "@toursadventure.com";
-            log.warn("⚠️ Cliente no encontrado en mapeo: {}, usando default: {}", clienteId, email);
-        } else {
-            log.info("✅ Email encontrado en mapeo local: {} -> {}", clienteId, email);
+    // MÉTODO PARA OBTENER EMAIL DE FORMA DINÁMICA
+    private String obtenerEmailDinamicamente(String clienteId) {
+        try {
+            // 1. Intentar obtener del cache de payment-service
+            try {
+                String url = "http://localhost:8090/api/payment/users/get-email/" + clienteId;
+                Map<String, String> response = restTemplate.getForObject(url, Map.class);
+                
+                if (response != null && response.containsKey("email")) {
+                    String email = response.get("email").toString();
+                    log.info("✅ EMAIL OBTENIDO DEL CACHE: {} -> {}", clienteId, email);
+                    return email;
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ No se pudo obtener email del cache de payment-service: {}", e.getMessage());
+            }
+            
+            // 2. Si no está en cache, usar mapeo local o cache dinámico
+            String email = UserRegisteredListener.obtenerEmailDinamico(clienteId);
+            log.info("📧 EMAIL ASIGNADO DEL MAPEO LOCAL: {} -> {}", clienteId, email);
+            return email;
+            
+        } catch (Exception e) {
+            log.error("❌ Error obteniendo email para cliente {}: {}", clienteId, e.getMessage());
+            return clienteId.toLowerCase() + "@toursadventure.com";
         }
-        
-        return email;
     }
 
     // MÉTODOS AUXILIARES (se mantienen igual)
@@ -106,7 +117,7 @@ public class PaymentNotificationListener {
     }
 
     private void enviarEmailConfirmacion(String email, String clienteId, Double total, 
-                                       List<String> codigosPaquetes, String mensaje) {
+                                       List<String> codigosPaquetes, String mensaje, String cedula, String direccion) {
         try {
             EmailDTO emailDTO = new EmailDTO();
             emailDTO.setDestinatario(email);
@@ -120,13 +131,12 @@ public class PaymentNotificationListener {
                 "<p>¡Tu compra ha sido confirmada exitosamente!</p>" +
                 "<h3>📋 Detalles de la compra:</h3>" +
                 "<ul>" +
-                "<li><strong>Cliente ID:</strong> " + clienteId + "</li>" +
-                "<li><strong>Email destino:</strong> " + email + "</li>" +
+                "<li><strong>Cédula:</strong> " + cedula + "</li>" +
+                "<li><strong>Dirección:</strong> " + direccion + "</li>" +
                 "<li><strong>Paquetes:</strong> " + paquetesStr + "</li>" +
                 "<li><strong>Total pagado:</strong> $" + total + "</li>" +
                 "<li><strong>Estado:</strong> " + mensaje + "</li>" +
                 "</ul>" +
-                "<p><em>Este email fue enviado usando el mapeo local del email-service</em></p>" +
                 "<p>¡Gracias por confiar en Tours Adventure!</p>" +
                 "<br>" +
                 "<p>Saludos,<br>Equipo de Tours Adventure</p>";
@@ -134,7 +144,7 @@ public class PaymentNotificationListener {
             emailDTO.setMensaje(mensajeHtml);
             
             emailService.sendMail(emailDTO);
-            log.info("✅ EMAIL ENVIADO EXITOSAMENTE a: {} para cliente: {}", email, clienteId);
+            log.info("✅ EMAIL CONFIRMACIÓN ENVIADO a: {} para cliente: {}", email, clienteId);
             
         } catch (Exception e) {
             log.error("❌ Error enviando email de confirmación a {}: {}", email, e.getMessage());
@@ -148,15 +158,13 @@ public class PaymentNotificationListener {
             emailDTO.setAsunto("❌ Pago Rechazado - Tours Adventure");
             
             String mensajeHtml = "<h2>Pago Rechazado</h2>" +
-                "<p>Hola <strong>" + clienteId + "</strong>,</p>" +
+                "<p>Hola,</p>" +
                 "<p>Lamentamos informarte que tu pago ha sido rechazado.</p>" +
                 "<h3>📋 Detalles:</h3>" +
                 "<ul>" +
-                "<li><strong>Cliente ID:</strong> " + clienteId + "</li>" +
-                "<li><strong>Email destino:</strong> " + email + "</li>" +
+                "<li><strong>Email:</strong> " + email + "</li>" +
                 "<li><strong>Razón:</strong> " + mensaje + "</li>" +
                 "</ul>" +
-                "<p><em>Este email fue enviado usando el mapeo local del email-service</em></p>" +
                 "<p>Por favor, verifica tus fondos e intenta nuevamente.</p>" +
                 "<br>" +
                 "<p>Saludos,<br>Equipo de Tours Adventure</p>";
@@ -164,7 +172,7 @@ public class PaymentNotificationListener {
             emailDTO.setMensaje(mensajeHtml);
             
             emailService.sendMail(emailDTO);
-            log.info("✅ EMAIL DE RECHAZO ENVIADO a: {} para cliente: {}", email, clienteId);
+            log.info("✅ EMAIL RECHAZO ENVIADO a: {}", email);
             
         } catch (Exception e) {
             log.error("❌ Error enviando email de rechazo a {}: {}", email, e.getMessage());

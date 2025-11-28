@@ -35,6 +35,12 @@ public class RabbitMQConfig {
         return new Queue("pago.queue", true);
     }
 
+    // NUEVO: Bean para la cola de usuario registrado
+    @Bean
+    public Queue usuarioRegistradoQueue() {
+        return new Queue("usuario.registrado.queue", true);
+    }
+
     // Bean para el exchange ORIGINAL (se mantiene)
     @Bean
     public TopicExchange exchange() {
@@ -45,6 +51,12 @@ public class RabbitMQConfig {
     @Bean
     public TopicExchange compraExchange() {
         return new TopicExchange("compra.exchange");
+    }
+
+    // NUEVO: Bean para el exchange de usuario
+    @Bean
+    public TopicExchange usuarioExchange() {
+        return new TopicExchange("usuario.exchange", true, false);
     }
 
     // Bean para binding entre exchange y cola usando routing key ORIGINAL (se mantiene)
@@ -63,6 +75,15 @@ public class RabbitMQConfig {
                 .bind(pagoQueue())
                 .to(compraExchange())
                 .with("pago.routingkey");
+    }
+
+    // NUEVO: Binding para la cola de usuario registrado
+    @Bean
+    public Binding usuarioRegistradoBinding() {
+        return BindingBuilder
+                .bind(usuarioRegistradoQueue())
+                .to(usuarioExchange())
+                .with("usuario.registrado");
     }
 
     // Bean para convertir mensajes a JSON ORIGINAL (se mantiene)

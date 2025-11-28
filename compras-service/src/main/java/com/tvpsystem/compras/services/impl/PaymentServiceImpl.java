@@ -12,6 +12,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Map;
+import java.util.HashMap;
 
 @Service
 @RequiredArgsConstructor
@@ -74,29 +75,52 @@ public class PaymentServiceImpl implements IPaymentService {
     // MÉTODO CORREGIDO: Enviar notificación para email
     private void enviarNotificacionEmail(PaymentRequestDTO request, PaymentResponseDTO response, String emailCliente) {
         try {
+            // Obtener datos completos del usuario desde payment-service
+            String clienteId = request.getClienteId();
+            String cedula = "N/A";
+            String direccion = "N/A";
+            
+            try {
+                Map<String, Object> userData = webClientBuilder.build()
+                    .get()
+                    .uri(paymentServiceUrl + "/api/payment/users/get-user/" + clienteId)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+                
+                if (userData != null) {
+                    cedula = (String) userData.getOrDefault("cedula", "N/A");
+                    direccion = (String) userData.getOrDefault("direccion", "N/A");
+                    log.info("✅ Datos de usuario obtenidos: Cédula={}, Dirección={}", cedula, direccion);
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ No se pudieron obtener datos adicionales del usuario: {}", e.getMessage());
+            }
+            
             // Validar que el email no sea null
             if (emailCliente == null || emailCliente.trim().isEmpty()) {
-                log.error("❌ Email es null o vacío para cliente: {}", request.getClienteId());
-                emailCliente = generarEmailDefault(request.getClienteId());
+                log.error("❌ Email es null o vacío para cliente: {}", clienteId);
+                emailCliente = generarEmailDefault(clienteId);
                 log.warn("⚠️ Usando email por defecto: {}", emailCliente);
             }
             
-            // Crear notificación con estructura CORRECTA
-            Map<String, Object> notificacion = Map.of(
-                "clienteId", request.getClienteId(),
-                "email", emailCliente, // Usar el email obtenido
-                "total", request.getTotal() != null ? request.getTotal() : 0.0,
-                "codigosPaquetes", request.getCodigosPaquetes() != null ? request.getCodigosPaquetes() : java.util.Collections.emptyList(),
-                "aprobado", response.isAprobado(),
-                "mensaje", response.getMensaje() != null ? response.getMensaje() : "Sin mensaje",
-                "paquetesFallidos", response.getPaquetesFallidos() != null ? response.getPaquetesFallidos() : java.util.Collections.emptyList(),
-                "tipo", "NOTIFICACION_PAGO",
-                "timestamp", System.currentTimeMillis()
-            );
+            // Crear notificación con estructura CORRECTA (incluyendo cédula y dirección)
+            Map<String, Object> notificacion = new HashMap<>();
+            notificacion.put("clienteId", clienteId);
+            notificacion.put("email", emailCliente);
+            notificacion.put("cedula", cedula);
+            notificacion.put("direccion", direccion);
+            notificacion.put("total", request.getTotal() != null ? request.getTotal() : 0.0);
+            notificacion.put("codigosPaquetes", request.getCodigosPaquetes() != null ? request.getCodigosPaquetes() : java.util.Collections.emptyList());
+            notificacion.put("aprobado", response.isAprobado());
+            notificacion.put("mensaje", response.getMensaje() != null ? response.getMensaje() : "Sin mensaje");
+            notificacion.put("paquetesFallidos", response.getPaquetesFallidos() != null ? response.getPaquetesFallidos() : java.util.Collections.emptyList());
+            notificacion.put("tipo", "NOTIFICACION_PAGO");
+            notificacion.put("timestamp", System.currentTimeMillis());
             
             rabbitTemplate.convertAndSend("compra.exchange", "pago.routingkey", notificacion);
-            log.info("✅ Notificación de pago enviada a RabbitMQ para cliente: {} -> Email: {}", 
-                    request.getClienteId(), emailCliente);
+            log.info("✅ Notificación de pago enviada a RabbitMQ para cliente: {} -> Email: {} (Con Cédula y Dirección)", 
+                    clienteId, emailCliente);
             
         } catch (Exception e) {
             log.error("❌ Error enviando notificación a RabbitMQ para cliente {}: {}", 
@@ -104,11 +128,31 @@ public class PaymentServiceImpl implements IPaymentService {
         }
     }
 
-    // MÉTODO MEJORADO: Obtener email del cliente
+    // MÉTODO MEJORADO: Obtener email del cliente - Primero del cache, luego del mapeo
     private String obtenerEmailDelCliente(String clienteId) {
         try {
-            // Mapeo completo de clientes a emails
+            // 1. Intentar obtener del cache de payment-service
+            try {
+                String url = "http://localhost:8090/api/payment/users/get-email/" + clienteId;
+                Map<String, String> response = webClientBuilder.build()
+                        .get()
+                        .uri(url)
+                        .retrieve()
+                        .bodyToMono(Map.class)
+                        .block();
+                
+                if (response != null && response.containsKey("email")) {
+                    String email = response.get("email").toString();
+                    log.info("📧 EMAIL OBTENIDO DEL CACHE: {} -> {}", clienteId, email);
+                    return email;
+                }
+            } catch (Exception e) {
+                log.warn("⚠️ No se pudo obtener email del cache de payment-service: {}", e.getMessage());
+            }
+            
+            // 2. Si no está en cache, usar mapeo local
             Map<String, String> clientesEmails = Map.of(
+                "1", "castrosantiago476@gmail.com",
                 "CLI-1001", "castrozsantiago@javeriana.edu.co",
                 "CLI-2002", "castrosantiago476@gmail.com", 
                 "CLI-3003", "castrosantiago3@gmail.com",
